@@ -1,5 +1,6 @@
 package com.example.fundamentoscorrutinas
 
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -16,7 +17,113 @@ fun main() {
     //terminalFlowOperators()
     //bufferFlow()
     //conflationFlow()
-    multiFlow()
+    //multiFlow()
+    //flatFlows()
+    //flowExceptions()
+    completions()
+}
+
+fun completions() {
+    runBlocking {
+        newTopic("Fin de un Flujo (onCompletetion)")
+        getCitiesFlow()
+                //Una vez terminado el flujo se puede llamar onCompletion para ejecutar una acción
+            .onCompletion { println("Quitar el progressBar...") }
+            .collect{ println(it) }
+        println()
+
+        getMatchResultsFlow()
+                //Aqui mostraremos las estadisticas del partido aunq marque error o haya salido bien
+            .onCompletion { println("Mostrar las estadisticas...") }
+            .catch { emit("Error: $this") }
+            .collect{ println(it) }
+
+        newTopic("Cancelar Flow")
+        getDatabyFlowStatic()
+            .onCompletion { println("Ya no le interesa al usuario...") }
+            .cancellable()
+            .collect{
+                //Una vez que llegue a cumplir esta condición se cancelará el flujo de datos y por lo tanto el proximo valor ya no será recolectado,
+                //en su lugar vamos a obtener una excepción
+                if (it > 22.5f) cancel()
+                println(it)
+            }
+    }
+}
+
+fun flowExceptions() {
+    runBlocking {
+        newTopic("Control de errores")
+        newTopic("Try/Catch")
+        /*try {
+            //Utilizamos el metodo para simular un partido de football
+            getMatchResultsFlow()
+                .collect{
+                    //Se muestra los valores de la simulación
+                    println(it)
+                    //se realiza una validación en donde encuentre un valor de 2 se creará un error ya que se habia acordad 1-1
+                    if (it.contains("2")) throw Exception("Habian acordado 1-1")
+                }
+        } catch (e: Exception) {
+            //con esto mostramos el error personalizado que creamos con throw
+            e.printStackTrace()
+            //Al final si detecta un 2 se mostrará algo asi 2-1 y automaticamente se detendrá el flujo sin importar en que minuto fue
+        }*/
+
+        //Esto es otra forma de cachar el error dentro de flow pero mas controlado, personalizado y utilizando su propia palabra reservada catch
+        newTopic("Transparencia")
+        getMatchResultsFlow()
+            .catch {
+                emit("Error: $this")
+            }
+            .collect{
+                println(it)
+                if (!it.contains("-")) println("Notifica al programador...")
+            }
+    }
+}
+
+//Este tema se requiere de mas analisis por que tiene un nivel de dificultad alto
+fun flatFlows() {
+    runBlocking {
+        newTopic("Flujos de aplanamiento")
+
+        newTopic("FlatMapConcat")
+        getCitiesFlow()
+            .flatMapConcat {cities ->  //Flow<Flow<Type>>
+                getDataToFlatFlow(cities)
+            }
+            .map { setFormat(it) }
+            //.collect{ println(it) }
+
+        newTopic("FlatMapMerge")
+        getCitiesFlow()
+            .flatMapMerge {cities ->  //Flow<Flow<Type>>
+                getDataToFlatFlow(cities)
+            }
+            .map { setFormat(it) }
+            .collect{ println(it) }
+    }
+}
+
+fun getDataToFlatFlow(city: String): Flow<Float> = flow {
+    (1..3).forEach{
+        println("Temperatura de ayer en $city...")
+        emit(Random.nextInt(10,30).toFloat())
+
+        println("Temperatura actual en $city:")
+        delay(100)
+        emit(20 + it + Random.nextFloat())
+    }
+}
+
+fun getCitiesFlow(): Flow<String> = flow{
+    listOf("Santander", "CDMX", "Lima")
+        .forEach{city ->
+            println("\nConsultando ciudad...")
+            delay(1_000)
+            emit(city)
+        }
 }
 
 //Zip - Combine -> estos dos metodos nos ayuda a mezclar dos flujos por medio de la libreria de flow
@@ -77,6 +184,8 @@ fun getMatchResultsFlow(): Flow<String> {
             homeTeam += Random.nextInt(0,21)/20
             awayTeam += Random.nextInt(0,21)/20
             emit("$homeTeam-$awayTeam")
+
+            if (homeTeam == 2 || awayTeam == 2) throw Exception("Habian acordado 1 y 1 :v")
         }
     }
 }
@@ -269,6 +378,8 @@ fun cancelFlow() {
     }
 }
 
+//Cold es llamado asi por que debido a que un flujo no comenzará a enviar valores, hasta que su colector sea llamado. Mientras tanto quedará
+//en estado de suspendido
 fun coldFlow() {
     newTopic("Flows are Cold")
     runBlocking {
